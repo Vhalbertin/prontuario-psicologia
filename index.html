@@ -1,1 +1,291 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
+  <title>Prontuário Psicológico</title>
+
+  <style>
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: #f4f5f7;
+      font-family: Arial, sans-serif;
+    }
+
+    .container {
+      width: 90%;
+      max-width: 500px;
+      background: white;
+      padding: 30px;
+      border-radius: 16px;
+      box-shadow: 0 5px 25px rgba(0,0,0,0.08);
+    }
+
+    h1 {
+      text-align: center;
+    }
+
+    label {
+      display: block;
+      margin-top: 18px;
+      margin-bottom: 6px;
+      font-weight: bold;
+    }
+
+    input {
+      box-sizing: border-box;
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-size: 16px;
+    }
+
+    .buttons {
+      display: flex;
+      gap: 10px;
+      margin-top: 25px;
+    }
+
+    button {
+      flex: 1;
+      padding: 15px;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    #gravar {
+      background: #b91c1c;
+      color: white;
+    }
+
+    #parar {
+      background: #333;
+      color: white;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    #status {
+      margin-top: 20px;
+      padding: 12px;
+      border-radius: 8px;
+      background: #f1f1f1;
+      text-align: center;
+    }
+  </style>
+</head>
+
+<body>
+
+<div class="container">
+
+  <h1>Prontuário Psicológico</h1>
+
+  <label for="paciente">Paciente</label>
+
+  <input
+    type="text"
+    id="paciente"
+    placeholder="Identificador do paciente"
+  >
+
+  <label for="data">Data da sessão</label>
+
+  <input
+    type="date"
+    id="data"
+  >
+
+  <div class="buttons">
+
+    <button id="gravar">
+      🎙️ Gravar
+    </button>
+
+    <button id="parar" disabled>
+      ⏹️ Parar
+    </button>
+
+  </div>
+
+  <div id="status">
+    Aguardando gravação
+  </div>
+
+</div>
+
+<script>
+
+let mediaRecorder;
+let audioChunks = [];
+let currentStream = null;
+
+const gravar = document.getElementById("gravar");
+const parar = document.getElementById("parar");
+const status = document.getElementById("status");
+
+const webhookAudio =
+  "https://albertin.app.n8n.cloud/webhook/psicologia/audio";
+
+
+gravar.addEventListener("click", async () => {
+
+  const paciente =
+    document.getElementById("paciente").value.trim();
+
+  const data =
+    document.getElementById("data").value;
+
+  if (!paciente) {
+    alert("Informe o paciente.");
+    return;
+  }
+
+  if (!data) {
+    alert("Informe a data da sessão.");
+    return;
+  }
+
+  try {
+
+    status.textContent =
+      "Solicitando acesso ao microfone...";
+
+    currentStream =
+      await navigator.mediaDevices.getUserMedia({
+        audio: true
+      });
+
+    audioChunks = [];
+
+    mediaRecorder =
+      new MediaRecorder(currentStream);
+
+    mediaRecorder.ondataavailable = (event) => {
+
+      if (event.data.size > 0) {
+        audioChunks.push(event.data);
+      }
+
+    };
+
+    mediaRecorder.onstop = async () => {
+
+      currentStream
+        .getTracks()
+        .forEach(track => track.stop());
+
+      status.textContent =
+        "⏳ Enviando áudio...";
+
+      const audioBlob =
+        new Blob(
+          audioChunks,
+          { type: "audio/webm" }
+        );
+
+      const formData =
+        new FormData();
+
+      formData.append(
+        "paciente",
+        paciente
+      );
+
+      formData.append(
+        "data",
+        data
+      );
+
+      formData.append(
+        "audio",
+        audioBlob,
+        "sessao.webm"
+      );
+
+      try {
+
+        const response =
+          await fetch(
+            webhookAudio,
+            {
+              method: "POST",
+              body: formData
+            }
+          );
+
+        if (!response.ok) {
+          throw new Error(
+            "Erro HTTP " + response.status
+          );
+        }
+
+        status.textContent =
+          "✅ Áudio enviado com sucesso!";
+
+      } catch (error) {
+
+        console.error(error);
+
+        status.textContent =
+          "❌ Erro ao enviar o áudio.";
+
+      }
+
+    };
+
+    mediaRecorder.start();
+
+    gravar.disabled = true;
+    parar.disabled = false;
+
+    status.textContent =
+      "🔴 Gravando...";
+
+  } catch (error) {
+
+    console.error(error);
+
+    status.textContent =
+      "❌ Não foi possível acessar o microfone.";
+
+  }
+
+});
+
+
+parar.addEventListener("click", () => {
+
+  if (
+    mediaRecorder &&
+    mediaRecorder.state !== "inactive"
+  ) {
+
+    mediaRecorder.stop();
+
+    gravar.disabled = false;
+    parar.disabled = true;
+
+    status.textContent =
+      "⏳ Processando áudio...";
+
+  }
+
+});
+
+</script>
+
+</body>
+</html>
